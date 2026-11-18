@@ -1,5 +1,5 @@
 __pycache__/
 *.pyc
 .env
-tiktok-research/
+/tiktok-research/
 *.mp4
