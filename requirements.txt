@@ -1,0 +1,6 @@
+# Tested versions (2026-11-18). yt-dlp is a floor: TikTok changes often, keep it updated.
+apify-client==3.5.1
+google-genai==3.5.0
+python-dotenv==1.2.2
+requests==2.33.1
+yt-dlp>=2026.8.19
