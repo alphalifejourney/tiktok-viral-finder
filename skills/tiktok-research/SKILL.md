@@ -55,6 +55,15 @@ Windows notes: run Python with `PYTHONUTF8=1`. If `APIFY_TOKEN` was set with `se
 
 ## Workflow
 
+### 0. No accounts yet? Find some from hashtags (optional, costs credit)
+
+```bash
+python ~/.claude/skills/tiktok-research/scripts/find_accounts.py --hashtags aieducation claudecode \
+  --per-hashtag 40 --min-followers 1000 --max-followers 500000 -o tiktok-research/candidates.json
+```
+
+It lists the creators behind each hashtag's top videos with followers and best views. Show the user the ones that fit their niche (some hashtags are noisy: #aitraining is mostly "get paid to train AI" job content) and add the chosen handles to `tiktok-accounts.md`. Aim for accounts within about 10x of the user's own follower count, plus 2-4 bigger ones.
+
 ### 1. Create a run folder
 
 ```bash
@@ -63,7 +72,7 @@ RUN_FOLDER="tiktok-research/$(date +%Y-%m-%d_%H%M%S)" && mkdir -p "$RUN_FOLDER" 
 
 ### 2. Fetch videos (Apify, costs credit)
 
-Tell the user roughly what it costs before the first run (about $0.05 per 10 videos per account at Apify's current rates). Start small: `--limit 10`.
+Tell the user roughly what it costs before the first run (about $0.05 per 10 videos per account at Apify's current rates). Use `--limit 10` or more: the ranking needs at least 10 videos per account to be reliable (accounts under 5 are skipped, under 10 get a warning).
 
 ```bash
 python ~/.claude/skills/tiktok-research/scripts/fetch_tiktok.py --days 30 --limit 10 --output "$RUN_FOLDER/raw.json"
@@ -78,7 +87,7 @@ python ~/.claude/skills/tiktok-research/scripts/fetch_tiktok.py --days 30 --limi
 python ~/.claude/skills/tiktok-research/scripts/rank_by_account.py -i "$RUN_FOLDER/raw.json" -o "$RUN_FOLDER/outliers-by-account.json"
 ```
 
-`multiple = views / that account's median views`. Above 3x is a signal; under 1.5x is that account's normal day, however big the number looks. Accounts with fewer than 3 videos in the window are skipped (their median isn't reliable).
+`multiple = views / that account's median views`. Above 3x is a signal; under 1.5x is that account's normal day, however big the number looks. Accounts with fewer than 5 videos in the window are skipped and accounts under 10 get a warning (their median is shaky).
 
 Optional, for hashtags / sounds / keywords:
 ```bash
@@ -93,7 +102,7 @@ python ~/.claude/skills/video-content-analyzer/scripts/analyze_videos.py \
   -i "$RUN_FOLDER/outliers-by-account.json" -o "$RUN_FOLDER/video-analysis.json" -p tiktok -n 3
 ```
 
-Each video is downloaded with yt-dlp and uploaded to Gemini (deleted after). It extracts the hook and a replicable formula, the structure, pacing, delivery and CTA. Each run overwrites `video-analysis.json`, so copy it first if you want to keep an earlier run. If Gemini is overloaded (503) or the free daily quota is used up (429), say so and write the report from the numbers and captions.
+Each video is downloaded with yt-dlp and uploaded to Gemini (deleted after). It extracts the hook and a replicable formula, the structure, pacing, delivery and CTA. Results are added to `video-analysis.json`, never overwritten: videos already analyzed are skipped, so after a quota stop just run the same command again the next day. On a 503 (overloaded) it retries; on a used-up daily quota (429) it stops at once. If no analysis ran, say so and write the report from the numbers and captions.
 
 ### 5. Write the report
 

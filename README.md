@@ -6,6 +6,12 @@ A free Claude Code skill. Give Claude the TikTok accounts in your niche and say 
 
 Why "its own normal": a big account getting 2 million views on a quiet day teaches you nothing. A 6,000-follower account getting 500,000 views found something you can copy.
 
+<p align="center">
+  <a href="https://github.com/alphalifejourney/tiktok-viral-finder/releases/latest/download/tiktok-viral-finder.zip"><b>⬇️ Download the skill (tiktok-viral-finder.zip)</b></a>
+</p>
+
+![Frames from a video about this skill](images/example-frames.jpg)
+
 ---
 
 ## What a real run found
@@ -27,10 +33,11 @@ The big account in the list (156K followers) had nothing above 5x.
 
 | Step | What happens |
 |---|---|
+| 0. Find accounts (optional) | `find_accounts.py` lists the creators behind a hashtag's top videos (e.g. #aieducation) with their follower counts |
 | 1. Accounts | You list 6-12 TikTok accounts in `tiktok-accounts.md` (or ask Claude to add them) |
 | 2. Fetch | Apify's TikTok scraper pulls their recent videos with views, likes, saves, shares, sound and caption |
-| 3. Rank | `rank_by_account.py`: each video's views ÷ that account's median views. Above 3x is a signal |
-| 4. Watch | Gemini watches the top 3-5 videos: hook, replicable formula, structure, pacing, delivery, call to action |
+| 3. Rank | `rank_by_account.py`: each video's views ÷ that account's median views. Above 3x is a signal. Accounts with under 5 videos are skipped, under 10 get a warning |
+| 4. Watch | Gemini watches the top 3-5 videos: hook, replicable formula, structure, pacing, delivery, call to action. Results are added, never overwritten; it stops at once if the free daily quota is used up |
 | 5. Report | `report.md`: outliers table, hook formulas, patterns, video ideas for your niche |
 
 ---
@@ -52,7 +59,7 @@ Open Claude Code and say:
 
 > Install this skill for me: https://github.com/alphalifejourney/tiktok-viral-finder
 
-Or by hand: copy both folders in `skills/` into `~/.claude/skills/`, then
+Or by hand: download the zip above, unzip it into `~/.claude/skills/` (you get `tiktok-research` and `video-content-analyzer`), then
 
 ```bash
 python -m pip install -r ~/.claude/skills/tiktok-research/requirements.txt
@@ -60,9 +67,11 @@ python -m pip install -r ~/.claude/skills/tiktok-research/requirements.txt
 
 ## Use
 
-1. "Add these TikTok accounts to track: @... @... @..."
+1. "Add these TikTok accounts to track: @... @... @..." (or "find accounts to track from #aieducation")
 2. "Run tiktok research"
 3. Read `tiktok-research/<date>/report.md`
+
+![The steps](images/how-it-works.jpg)
 
 ---
 
@@ -74,7 +83,9 @@ Based on [bradautomates/head-of-content](https://github.com/bradautomates/head-o
 - **Works with current apify-client** (newer versions return an object, not a dict; the original crashes).
 - **Gemini really watches the video.** The original first sent the TikTok link to Gemini as plain text, so Gemini never saw the video and could make up an analysis. Now every video is downloaded with yt-dlp and uploaded.
 - **Current Gemini model** (`gemini-3.8-flash`; `gemini-2.5-flash` is no longer available to new users), changeable with `GEMINI_MODEL`.
-- **Retries** when Gemini is overloaded (503) or rate-limited (429).
+- **Retries** when Gemini is overloaded (503), but stops at once when the daily quota is used up (429), and never overwrites earlier results.
+- **Finds accounts for you** from hashtags (`find_accounts.py`).
+- Works in Windows consoles (no crash on emoji in captions).
 - Installs as a global skill (works from any folder), with a "Before you start" check list.
 
 MIT License. By [Automate Leverage](https://automateleverage.com).

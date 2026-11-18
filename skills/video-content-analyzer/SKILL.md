@@ -29,7 +29,7 @@ Check every item below before doing anything else. If any is missing, STOP and t
 | `yt-dlp` on PATH (TikTok/YouTube page URLs are downloaded with it) | `yt-dlp --version` | `python -m pip install yt-dlp` |
 | `GEMINI_API_KEY` (env var) | `python -c "import os; assert os.environ.get('GEMINI_API_KEY')"` | aistudio.google.com → Get API key; set it as an environment variable or in a `.env` file. Never paste it into the chat |
 
-Every video is downloaded (yt-dlp for TikTok/YouTube page links) and uploaded to Google's Gemini File API, then deleted after analysis. The model defaults to `gemini-3.8-flash`; set the env var `GEMINI_MODEL` to use another. On a 503 (overloaded) or 429 (quota) it retries up to 3 times; the free tier allows about 20 requests a day per model and retries count. Each run overwrites the output file.
+Every video is downloaded (yt-dlp for TikTok/YouTube page links) and uploaded to Google's Gemini File API, then deleted after analysis. The model defaults to `gemini-3.8-flash`; set the env var `GEMINI_MODEL` to use another. On a 503 (overloaded) it retries up to 3 times; on a used-up daily quota (429) it stops at once, because retries count against the quota (the free tier allows about 20 requests a day per model). Results are added to the output file, never overwritten, and videos already analyzed are skipped on the next run.
 
 ## Usage
 

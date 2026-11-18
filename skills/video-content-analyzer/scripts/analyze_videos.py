@@ -6,6 +6,7 @@ Focuses on content structure, hooks, and replicable patterns.
 """
 
 import json
+import sys
 import argparse
 import os
 import io
@@ -229,11 +230,21 @@ def wait_for_processing(client, file, timeout: int = 300):
     raise TimeoutError(f"File processing timeout: {file.name}")
 
 
+class QuotaExhausted(Exception):
+    """Gemini's daily quota is used up: retrying only burns more of it."""
+
+
+def _is_quota(e: Exception) -> bool:
+    t = str(e)
+    return 'RESOURCE_EXHAUSTED' in t or ('429' in t and ('quota' in t.lower() or 'per day' in t.lower()))
+
+
 def analyze_video(client, video_source, caption: str) -> dict:
     """Analyze video with Gemini."""
     prompt = VIDEO_ANALYSIS_PROMPT.format(caption=caption[:1000] if caption else "No caption")
 
-    # Changed from upstream: retry on Gemini overload (503/429) with backoff.
+    # Changed from upstream: retry on Gemini overload (503) with backoff; stop at once on a
+    # used-up quota (429 RESOURCE_EXHAUSTED), because every retry counts against the quota.
     for attempt in range(4):
         try:
             response = client.models.generate_content(
@@ -245,7 +256,9 @@ def analyze_video(client, video_source, caption: str) -> dict:
             )
             break
         except Exception as e:
-            if attempt < 3 and any(s in str(e) for s in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")):
+            if _is_quota(e):
+                raise QuotaExhausted(str(e)) from e
+            if attempt < 3 and any(s in str(e) for s in ("503", "UNAVAILABLE", "429")):
                 wait = 20 * (attempt + 1)
                 print(f"    Gemini busy, retrying in {wait}s...")
                 time.sleep(wait)
@@ -260,7 +273,7 @@ def analyze_video(client, video_source, caption: str) -> dict:
     return {"error": "No response from Gemini"}
 
 
-def analyze_videos(outliers: list[dict], platform: str = "instagram", max_videos: int = 5) -> list[dict]:
+def analyze_videos(outliers: list[dict], platform: str = "instagram", max_videos: int = 5, done_ids=frozenset()) -> list[dict]:
     """
     Analyze top outlier videos with Gemini AI.
 
@@ -290,9 +303,13 @@ def analyze_videos(outliers: list[dict], platform: str = "instagram", max_videos
 
     # Filter to videos only using platform-specific logic
     video_posts = [p for p in outliers if is_video_post(p, platform)][:max_videos]
+    already = [p for p in video_posts if str(extract_post_data(p, platform)["post_id"]) in done_ids]
+    if already:
+        print(f"Skipping {len(already)} video(s) already analyzed in the output file")
+    video_posts = [p for p in video_posts if p not in already]
 
     if not video_posts:
-        print("No video content found in outliers")
+        print("Nothing new to analyze")
         return []
 
     print(f"Analyzing {len(video_posts)} {platform} videos with Gemini AI...")
@@ -346,18 +363,27 @@ def analyze_videos(outliers: list[dict], platform: str = "instagram", max_videos
             results.append(result)
             time.sleep(2)
 
+        except QuotaExhausted as e:
+            print("    Gemini daily quota is used up. Stopping now (retries would only burn more quota).")
+            print("    Run the same command again tomorrow: videos already analyzed are skipped.")
+            result['error'] = 'quota exhausted: ' + str(e)[:300]
+            results.append(result)
+            break
+
         except Exception as e:
             print(f"    Error: {e}")
             result['error'] = str(e)
             results.append(result)
 
     successful = sum(1 for r in results if 'analysis' in r)
-    print(f"Successfully analyzed {successful}/{len(video_posts)} videos")
+    print(f"Successfully analyzed {successful}/{len(video_posts)} new videos")
 
     return results
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description='Analyze short-form videos with Gemini AI')
     parser.add_argument('--input', '-i', required=True,
                         help='Input JSON file with outlier posts')
@@ -372,7 +398,7 @@ def main():
     args = parser.parse_args()
 
     print(f"Loading outliers from: {args.input}")
-    with open(args.input, 'r') as f:
+    with open(args.input, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     # Handle both list format and dict with 'outliers' key
@@ -382,13 +408,29 @@ def main():
         outliers = data
     print(f"Loaded {len(outliers)} outlier posts")
 
-    results = analyze_videos(outliers, args.platform, args.max_videos)
+    # Changed from upstream: never overwrite good results. Earlier successful analyses in the
+    # output file are kept and skipped; new results are added (a new success replaces an old error).
+    previous = []
+    if os.path.exists(args.output):
+        try:
+            with open(args.output, 'r', encoding='utf-8') as f:
+                previous = json.load(f) or []
+        except (json.JSONDecodeError, OSError):
+            backup = args.output + '.unreadable'
+            os.replace(args.output, backup)
+            print(f"Existing output was unreadable, moved to {backup}")
+    done_ids = {str(r.get('post_id')) for r in previous if 'analysis' in r}
 
-    # Save results
+    results = analyze_videos(outliers, args.platform, args.max_videos, done_ids)
+
+    new_ids = {str(r.get('post_id')) for r in results}
+    merged = [r for r in previous if str(r.get('post_id')) not in new_ids] + results
+
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output, 'w') as f:
-        json.dump(results, f, indent=2, default=str)
-    print(f"\nVideo analysis saved to: {args.output}")
+    with open(args.output, 'w', encoding='utf-8') as f:
+        json.dump(merged, f, indent=2, default=str)
+    ok = sum(1 for r in merged if 'analysis' in r)
+    print(f"\nVideo analysis saved to: {args.output} ({ok} analyzed in total)")
 
 
 if __name__ == '__main__':

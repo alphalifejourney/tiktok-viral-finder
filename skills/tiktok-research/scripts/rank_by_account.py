@@ -9,22 +9,26 @@ followers, pooled across all accounts) is still useful for topics, but it misses
 breakouts from small accounts.
 
 Usage:
-  python rank_by_account.py -i raw.json -o outliers-by-account.json [--min-multiple 2] [--min-videos 3]
+  python rank_by_account.py -i raw.json -o outliers-by-account.json [--min-multiple 2] [--min-videos 5]
 """
 
 import argparse
+import sys
 import json
 import statistics
 from pathlib import Path
 
 
 def main():
+    # Windows consoles default to cp1252 and crash on emoji in captions
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="Rank TikToks against each account's own median views")
     ap.add_argument('--input', '-i', required=True, help='raw.json from fetch_tiktok.py')
     ap.add_argument('--output', '-o', required=True, help='output JSON ({"outliers": [...]})')
     ap.add_argument('--min-multiple', type=float, default=2.0, help='keep videos at or above this multiple (default 2)')
-    ap.add_argument('--min-videos', type=int, default=3,
-                    help='skip accounts with fewer videos than this; their median is not reliable (default 3)')
+    ap.add_argument('--min-videos', type=int, default=5,
+                    help='skip accounts with fewer videos than this; their median is not reliable (default 5)')
     args = ap.parse_args()
 
     with open(args.input, 'r', encoding='utf-8') as f:
@@ -34,7 +38,7 @@ def main():
     for v in videos:
         by_account.setdefault(v.get('authorUsername') or 'unknown', []).append(v)
 
-    ranked, skipped = [], []
+    ranked, skipped, thin = [], [], []
     print(f"{'account':<24}{'videos':>7}{'median views':>14}{'followers':>12}")
     for account, vids in sorted(by_account.items()):
         views = [v.get('playCount') or 0 for v in vids]
@@ -44,6 +48,8 @@ def main():
         if len(vids) < args.min_videos or median <= 0:
             skipped.append(account)
             continue
+        if len(vids) < 10:
+            thin.append(account)
         for v in vids:
             out = {k: val for k, val in v.items() if k != '_raw'}
             out['_account_median_views'] = median
@@ -60,6 +66,7 @@ def main():
             'min_multiple': args.min_multiple,
             'total_videos': len(videos),
             'accounts_skipped_too_few_videos': skipped,
+            'accounts_under_10_videos': thin,
             'outlier_count': len(outliers),
             'outliers': outliers,
         }, f, indent=2, default=str)
@@ -70,6 +77,9 @@ def main():
         print(f"{v['_multiple']:>7.1f}x  @{v.get('authorUsername')}  {v.get('playCount') or 0:>10,} views  {hook!r}")
     if skipped:
         print(f"Skipped (fewer than {args.min_videos} videos): {', '.join('@' + a for a in skipped)}")
+    if thin:
+        print(f"WARNING: fewer than 10 videos for {', '.join('@' + a for a in thin)}: their median is shaky and multiples can be off "
+              f"by 10x. Fetch with --limit 10 or more before trusting them.")
     print(f"Saved: {args.output}")
 
 
